@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+  "name": "quest-tracker-ng",
+  "version-string": "1.0.0",
+  "description": "SKSE plugin: ImGui overlay listing running quests with stage editing (CommonLibSSE-NG).",
+  "builtin-baseline": "79b39cc61b25a8ff6593a775b77e9c7af8500ce6",
+  "dependencies": [
+    "spdlog",
+    "rapidcsv",
+    {
+      "name": "imgui",
+      "features": [
+        "dx11-binding"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  logic-tests:
+    name: Logic tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S tests -B build-tests -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-tests
+
+      - name: Test
+        run: ctest --test-dir build-tests --output-on-failure
+
+  plugin:
+    name: SKSE plugin (MSVC)
+    runs-on: windows-latest
+    needs: logic-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Point at the runner's vcpkg
+        shell: pwsh
+        run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg_installed
+            ~\AppData\Local\vcpkg\archives
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+
+      - name: Configure
+        run: cmake --preset vs2022-windows
+
+      - name: Build (Release)
+        run: cmake --build --preset release
+
+      - name: Package
+        shell: pwsh
+        run: python scripts/package.py --dist build/dist --out QuestTrackerNG.zip
+
+      - name: Upload mod package
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestTrackerNG
+          path: |
+            QuestTrackerNG.zip
+            build/dist/
+          if-no-files-found: error

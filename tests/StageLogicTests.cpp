@@ -1,0 +1,133 @@
+// Unit tests for src/Core/StageLogic.h — the engine-independent layer
+// shared with the SKSE plugin. No framework needed; exits non-zero on
+// failure so it plugs straight into CTest and CI.
+
+#include "Core/StageLogic.h"
+
+#include <cstdio>
+
+namespace
+{
+	int g_failures = 0;
+	int g_checks = 0;
+}
+
+#define CHECK(expr)                                                          \
+	do {                                                                     \
+		++g_checks;                                                          \
+		if (!(expr)) {                                                       \
+			++g_failures;                                                    \
+			std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #expr);      \
+		}                                                                    \
+	} while (0)
+
+using namespace QuestTracker::Logic;
+
+static void TestParseStageID()
+{
+	// happy path
+	CHECK(ParseStageID("0") == std::uint16_t{ 0 });
+	CHECK(ParseStageID("10") == std::uint16_t{ 10 });
+	CHECK(ParseStageID("200") == std::uint16_t{ 200 });
+	CHECK(ParseStageID("65535") == std::uint16_t{ 65535 });
+	CHECK(ParseStageID("  42  ") == std::uint16_t{ 42 });
+	CHECK(ParseStageID("\t7") == std::uint16_t{ 7 });
+	CHECK(ParseStageID("00010") == std::uint16_t{ 10 });  // leading zeros, still 5 chars
+
+	// rejections
+	CHECK(!ParseStageID(""));
+	CHECK(!ParseStageID("   "));
+	CHECK(!ParseStageID("65536"));   // > uint16 max
+	CHECK(!ParseStageID("99999"));   // > uint16 max
+	CHECK(!ParseStageID("123456"));  // too many digits
+	CHECK(!ParseStageID("-1"));
+	CHECK(!ParseStageID("+5"));
+	CHECK(!ParseStageID("1 0"));     // inner whitespace
+	CHECK(!ParseStageID("0x10"));    // hex not allowed
+	CHECK(!ParseStageID("ten"));
+	CHECK(!ParseStageID("12a"));
+	CHECK(!ParseStageID("1.5"));
+}
+
+static void TestFormatFormID()
+{
+	CHECK(FormatFormID(0x0) == "0x00000000");
+	CHECK(FormatFormID(0xA2C94) == "0x000A2C94");
+	CHECK(FormatFormID(0xFF000D62) == "0xFF000D62");
+	CHECK(FormatFormID(0xFFFFFFFF) == "0xFFFFFFFF");
+	CHECK(FormatFormID(0x1) == "0x00000001");
+}
+
+static void TestFilter()
+{
+	QuestRow row;
+	row.name = "The Way of the Voice";
+	row.editorID = "MQ105";
+	row.formID = 0x0002610C;
+
+	CHECK(MatchesFilter(row, ""));
+	CHECK(MatchesFilter(row, "voice"));
+	CHECK(MatchesFilter(row, "VOICE"));
+	CHECK(MatchesFilter(row, "mq105"));
+	CHECK(MatchesFilter(row, "0x0002610C"));
+	CHECK(MatchesFilter(row, "2610c"));
+	CHECK(!MatchesFilter(row, "dragonborn"));
+	CHECK(!MatchesFilter(row, "MQ106"));
+
+	// needle longer than haystack must not crash or match
+	QuestRow tiny;
+	tiny.name = "a";
+	CHECK(!MatchesFilter(tiny, "abcdefghijklmnopqrstuvwxyz0x123456789"));
+}
+
+static void TestClassifyStageChange()
+{
+	CHECK(ClassifyStageChange(10, 20) == StageVerdict::kAdvance);
+	CHECK(ClassifyStageChange(10, 10) == StageVerdict::kNoChange);
+	CHECK(ClassifyStageChange(20, 10) == StageVerdict::kRegression);
+	CHECK(ClassifyStageChange(0, 0) == StageVerdict::kNoChange);
+	CHECK(ClassifyStageChange(0, 65535) == StageVerdict::kAdvance);
+	CHECK(ClassifyStageChange(65535, 0) == StageVerdict::kRegression);
+}
+
+static void TestSortRows()
+{
+	std::vector<QuestRow> rows(4);
+	rows[0].editorID = "ZZZ";
+	rows[0].active = false;
+	rows[1].editorID = "AAA";
+	rows[1].active = false;
+	rows[2].editorID = "MMM";
+	rows[2].active = true;
+	rows[3].editorID = "";  // ties broken by form ID
+	rows[3].formID = 5;
+
+	SortRows(rows);
+
+	CHECK(rows[0].editorID == "MMM");  // active first
+	CHECK(rows[1].editorID == "");     // then lexicographic editor ID
+	CHECK(rows[2].editorID == "AAA");
+	CHECK(rows[3].editorID == "ZZZ");
+
+	// duplicate editor IDs: ordered by form ID, stable otherwise
+	std::vector<QuestRow> dupes(2);
+	dupes[0].editorID = "DLC1VQ";
+	dupes[0].formID = 9;
+	dupes[1].editorID = "DLC1VQ";
+	dupes[1].formID = 3;
+	SortRows(dupes);
+	CHECK(dupes[0].formID == 3);
+	CHECK(dupes[1].formID == 9);
+}
+
+int main()
+{
+	TestParseStageID();
+	TestFormatFormID();
+	TestFilter();
+	TestClassifyStageChange();
+	TestSortRows();
+
+	std::printf("%d checks, %d failure(s)\n", g_checks, g_failures);
+	return g_failures == 0 ? 0 : 1;
+}
