@@ -33,6 +33,12 @@ jobs:
         shell: pwsh
         run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
 
+      # The preinstalled vcpkg clone may predate the baseline commit pinned
+      # in vcpkg.json; fetch master so the baseline is resolvable.
+      - name: Update vcpkg registry
+        shell: pwsh
+        run: git -C $env:VCPKG_INSTALLATION_ROOT fetch origin master
+
       - name: Cache vcpkg packages
         uses: actions/cache@v4
         with:
