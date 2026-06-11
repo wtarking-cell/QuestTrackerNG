@@ -47,11 +47,16 @@ jobs:
             ~\AppData\Local\vcpkg\archives
           key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
 
-      - name: Configure
-        run: cmake --preset vs2022-windows
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
-      - name: Build (Release)
-        run: cmake --build --preset release
+      - name: Configure
+        run: cmake --preset ninja-ci
+
+      - name: Build
+        run: cmake --build --preset ci
 
       - name: Package
         shell: pwsh

@@ -13,6 +13,18 @@
         "VCPKG_TARGET_TRIPLET": "x64-windows-static-md"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "ninja-ci",
+      "displayName": "Ninja + MSVC (CI)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static-md"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     }
   ],
   "buildPresets": [
@@ -27,6 +39,11 @@
       "displayName": "Debug",
       "configurePreset": "vs2022-windows",
       "configuration": "Debug"
+    },
+    {
+      "name": "ci",
+      "displayName": "CI (Ninja RelWithDebInfo)",
+      "configurePreset": "ninja-ci"
     }
   ]
 }
