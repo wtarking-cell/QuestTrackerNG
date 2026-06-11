@@ -23,10 +23,19 @@ namespace UI
 		// --- render thread ------------------------------------------------
 		void Draw();
 
+		enum class ObjectiveAction : std::uint8_t
+		{
+			kShow,
+			kHide,
+			kComplete,
+			kFail
+		};
+
 		// --- main-thread work, posted via the SKSE task interface ---------
 		void RequestRefresh();
 		void RequestStages(std::uint32_t a_formID);
 		void RequestSetStage(std::uint32_t a_formID, std::uint16_t a_stage, bool a_force);
+		void RequestObjective(std::uint32_t a_formID, std::uint16_t a_objective, ObjectiveAction a_action);
 
 	private:
 		QuestTrackerUI() = default;
@@ -40,6 +49,7 @@ namespace UI
 		static void DoRefresh();
 		static void DoFetchStages(std::uint32_t a_formID);
 		static void DoSetStage(std::uint32_t a_formID, std::uint16_t a_stage, bool a_force);
+		static void DoSetObjective(std::uint32_t a_formID, std::uint16_t a_objective, ObjectiveAction a_action);
 
 		std::atomic<bool> visible_{ false };
 		std::atomic<bool> dataLoaded_{ false };

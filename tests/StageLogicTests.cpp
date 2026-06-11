@@ -193,6 +193,47 @@ static void TestGrouping()
 	CHECK(!MatchesFilter(rows[0], "mymod"));
 }
 
+static void TestColumnSorting()
+{
+	CHECK(CompareCaseInsensitive("abc", "ABC") == 0);
+	CHECK(CompareCaseInsensitive("abc", "abd") < 0);
+	CHECK(CompareCaseInsensitive("ab", "abc") < 0);
+	CHECK(CompareCaseInsensitive("b", "A") > 0);
+
+	std::vector<QuestRow> rows(3);
+	rows[0].name = "zeta";
+	rows[0].formID = 1;
+	rows[0].stage = 30;
+	rows[0].active = true;  // rank 0
+	rows[1].name = "Alpha";
+	rows[1].formID = 2;
+	rows[1].stage = 10;
+	rows[1].completed = true;  // rank 2
+	rows[2].name = "midway";
+	rows[2].formID = 3;
+	rows[2].stage = 20;  // rank 3 (stopped)
+
+	CHECK(StateRank(rows[0]) == 0);
+	CHECK(StateRank(rows[1]) == 2);
+	CHECK(StateRank(rows[2]) == 3);
+
+	SortRowsBy(rows, 0, true);  // name ascending, case-insensitive
+	CHECK(rows[0].name == "Alpha");
+	CHECK(rows[2].name == "zeta");
+
+	SortRowsBy(rows, 4, false);  // stage descending
+	CHECK(rows[0].stage == 30);
+	CHECK(rows[2].stage == 10);
+
+	SortRowsBy(rows, 5, true);  // state rank ascending
+	CHECK(rows[0].active);
+	CHECK(rows[2].name == "midway");
+
+	SortRowsBy(rows, 3, true);  // form ID
+	CHECK(rows[0].formID == 1);
+	CHECK(rows[2].formID == 3);
+}
+
 int main()
 {
 	TestParseStageID();
@@ -204,6 +245,7 @@ int main()
 	TestFormatStageLabel();
 	TestQuestTypeAndObjectiveLabels();
 	TestGrouping();
+	TestColumnSorting();
 
 	std::printf("%d checks, %d failure(s)\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

@@ -9,6 +9,37 @@ namespace UI
 {
 	using namespace QuestTracker::Logic;
 
+	namespace
+	{
+		// Dispatch a Papyrus Quest method on the given quest through the VM.
+		// Main thread only. On failure fills a_error and returns false.
+		bool DispatchQuestMethod(
+			RE::TESQuest*                      a_quest,
+			std::string_view                   a_function,
+			RE::BSScript::IFunctionArguments*  a_args,
+			std::string&                       a_error)
+		{
+			auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+			auto* policy = vm ? vm->GetObjectHandlePolicy() : nullptr;
+			if (!vm || !policy) {
+				a_error = "Papyrus VM unavailable";
+				return false;
+			}
+			const auto handle = policy->GetHandleForObject(
+				static_cast<RE::VMTypeID>(RE::FormType::Quest), a_quest);
+			if (handle == policy->EmptyHandle()) {
+				a_error = "Could not obtain a VM handle for the quest";
+				return false;
+			}
+			RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> callback;
+			if (!vm->DispatchMethodCall(handle, "Quest"sv, a_function, a_args, callback)) {
+				a_error = "VM rejected the call";
+				return false;
+			}
+			return true;
+		}
+	}
+
 	QuestTrackerUI& QuestTrackerUI::Get()
 	{
 		static QuestTrackerUI instance;
@@ -259,6 +290,70 @@ namespace UI
 		}
 	}
 
+	void QuestTrackerUI::RequestObjective(std::uint32_t a_formID, std::uint16_t a_objective, ObjectiveAction a_action)
+	{
+		const auto* tasks = SKSE::GetTaskInterface();
+		if (!tasks) {
+			SetStatus("SKSE task interface unavailable");
+			return;
+		}
+		tasks->AddTask([a_formID, a_objective, a_action]() {
+			DoSetObjective(a_formID, a_objective, a_action);
+		});
+	}
+
+	// Runs on the game's main thread. Uses the engine's own Papyrus natives
+	// (SetObjectiveDisplayed / SetObjectiveCompleted / SetObjectiveFailed),
+	// so HUD markers and quest bookkeeping update exactly like a script.
+	void QuestTrackerUI::DoSetObjective(std::uint32_t a_formID, std::uint16_t a_objective, ObjectiveAction a_action)
+	{
+		auto& self = Get();
+
+		auto* quest = RE::TESForm::LookupByID<RE::TESQuest>(a_formID);
+		if (!quest) {
+			self.SetStatus("Quest " + FormatFormID(a_formID) + " no longer exists");
+			return;
+		}
+
+		const auto index = static_cast<std::int32_t>(a_objective);
+		std::string_view                  fn;
+		RE::BSScript::IFunctionArguments* args = nullptr;
+		std::string_view                  verb;
+		switch (a_action) {
+		case ObjectiveAction::kShow:
+			fn = "SetObjectiveDisplayed"sv;
+			args = RE::MakeFunctionArguments(std::int32_t(index), bool(true), bool(true));
+			verb = "shown";
+			break;
+		case ObjectiveAction::kHide:
+			fn = "SetObjectiveDisplayed"sv;
+			args = RE::MakeFunctionArguments(std::int32_t(index), bool(false), bool(true));
+			verb = "hidden";
+			break;
+		case ObjectiveAction::kComplete:
+			fn = "SetObjectiveCompleted"sv;
+			args = RE::MakeFunctionArguments(std::int32_t(index), bool(true));
+			verb = "completed";
+			break;
+		case ObjectiveAction::kFail:
+			fn = "SetObjectiveFailed"sv;
+			args = RE::MakeFunctionArguments(std::int32_t(index), bool(true));
+			verb = "failed";
+			break;
+		default:
+			return;
+		}
+
+		std::string error;
+		if (DispatchQuestMethod(quest, fn, args, error)) {
+			self.SetStatus("Objective " + std::to_string(a_objective) + " " + std::string(verb));
+			self.RequestStages(a_formID);
+		} else {
+			self.SetStatus(error);
+			logger::error("{} failed for {}: {}", fn, FormatFormID(a_formID), error);
+		}
+	}
+
 	void QuestTrackerUI::SetStatus(std::string a_status)
 	{
 		std::scoped_lock guard(lock_);
@@ -370,7 +465,8 @@ namespace UI
 	void QuestTrackerUI::DrawTableRows(const std::vector<QuestRow>& a_rows, const char* a_id)
 	{
 		constexpr ImGuiTableFlags flags =
-			ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable;
+			ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable |
+			ImGuiTableFlags_Sortable;
 
 		ImGui::PushID(a_id);
 		if (ImGui::BeginTable("##quests", 6, flags)) {
@@ -382,7 +478,13 @@ namespace UI
 			ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 70.0f);
 			ImGui::TableHeadersRow();
 
-			for (const auto& row : a_rows) {
+			std::vector<QuestRow> rows = a_rows;
+			if (const auto* specs = ImGui::TableGetSortSpecs(); specs && specs->SpecsCount > 0) {
+				SortRowsBy(rows, specs->Specs[0].ColumnIndex,
+					specs->Specs[0].SortDirection != ImGuiSortDirection_Descending);
+			}
+
+			for (const auto& row : rows) {
 				ImGui::TableNextRow();
 				ImGui::PushID(static_cast<int>(row.formID));
 
@@ -483,10 +585,28 @@ namespace UI
 				ImGui::TextDisabled("(this quest has no objectives)");
 			} else {
 				for (const auto& objective : objectives) {
+					ImGui::PushID(static_cast<int>(objective.index));
+					if (ImGui::SmallButton("Show")) {
+						RequestObjective(selectedFormID_, objective.index, ObjectiveAction::kShow);
+					}
+					ImGui::SameLine();
+					if (ImGui::SmallButton("Hide")) {
+						RequestObjective(selectedFormID_, objective.index, ObjectiveAction::kHide);
+					}
+					ImGui::SameLine();
+					if (ImGui::SmallButton("Done")) {
+						RequestObjective(selectedFormID_, objective.index, ObjectiveAction::kComplete);
+					}
+					ImGui::SameLine();
+					if (ImGui::SmallButton("Fail")) {
+						RequestObjective(selectedFormID_, objective.index, ObjectiveAction::kFail);
+					}
+					ImGui::SameLine();
 					ImGui::TextWrapped("[%u] %s - %s",
 						static_cast<unsigned>(objective.index),
 						std::string(ObjectiveStateLabel(objective.state)).c_str(),
 						objective.text.empty() ? "<no text>" : objective.text.c_str());
+					ImGui::PopID();
 				}
 			}
 			ImGui::EndChild();
@@ -520,5 +640,7 @@ namespace UI
 				}
 			}
 		}
+		ImGui::SameLine();
+		ImGui::TextDisabled("Tip: make a hard save before forcing stages or objectives.");
 	}
 }

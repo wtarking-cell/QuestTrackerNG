@@ -232,6 +232,76 @@ namespace QuestTracker::Logic
 		return a_target > a_current ? StageVerdict::kAdvance : StageVerdict::kRegression;
 	}
 
+	// Rank for the State column: active < running < done < stopped.
+	inline int StateRank(const QuestRow& a_row)
+	{
+		if (a_row.active) {
+			return 0;
+		}
+		if (a_row.completed) {
+			return 2;
+		}
+		return a_row.running ? 1 : 3;
+	}
+
+	inline int CompareCaseInsensitive(std::string_view a_lhs, std::string_view a_rhs)
+	{
+		const std::size_t n = a_lhs.size() < a_rhs.size() ? a_lhs.size() : a_rhs.size();
+		for (std::size_t i = 0; i < n; ++i) {
+			const int l = std::tolower(static_cast<unsigned char>(a_lhs[i]));
+			const int r = std::tolower(static_cast<unsigned char>(a_rhs[i]));
+			if (l != r) {
+				return l < r ? -1 : 1;
+			}
+		}
+		if (a_lhs.size() == a_rhs.size()) {
+			return 0;
+		}
+		return a_lhs.size() < a_rhs.size() ? -1 : 1;
+	}
+
+	// Sort rows by table column index:
+	// 0 name, 1 editor ID, 2 mod, 3 form ID, 4 stage, 5 state.
+	inline void SortRowsBy(std::vector<QuestRow>& a_rows, int a_column, bool a_ascending)
+	{
+		const auto less = [a_column](const QuestRow& a, const QuestRow& b) {
+			switch (a_column) {
+			case 0:
+				if (const int c = CompareCaseInsensitive(a.name, b.name)) {
+					return c < 0;
+				}
+				break;
+			case 1:
+				if (const int c = CompareCaseInsensitive(a.editorID, b.editorID)) {
+					return c < 0;
+				}
+				break;
+			case 2:
+				if (const int c = CompareCaseInsensitive(a.modName, b.modName)) {
+					return c < 0;
+				}
+				break;
+			case 4:
+				if (a.stage != b.stage) {
+					return a.stage < b.stage;
+				}
+				break;
+			case 5:
+				if (StateRank(a) != StateRank(b)) {
+					return StateRank(a) < StateRank(b);
+				}
+				break;
+			default:
+				break;
+			}
+			return a.formID < b.formID;  // column 3 and tiebreaker
+		};
+		std::stable_sort(a_rows.begin(), a_rows.end(), less);
+		if (!a_ascending) {
+			std::reverse(a_rows.begin(), a_rows.end());
+		}
+	}
+
 	// Stable presentation order: running+active first, then by editor ID,
 	// then by form ID for rows without one.
 	inline void SortRows(std::vector<QuestRow>& a_rows)
