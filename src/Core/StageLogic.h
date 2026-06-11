@@ -95,6 +95,55 @@ namespace QuestTracker::Logic
 		       ContainsCaseInsensitive(FormatFormID(a_row.formID), a_filter);
 	}
 
+	// One stage of a quest, merged from the engine's executed/waiting
+	// stage lists.
+	struct StageRow
+	{
+		std::uint16_t index = 0;
+		bool          executed = false;
+		bool          startUp = false;
+		bool          shutDown = false;
+	};
+
+	// Sort by stage index and merge duplicate indices (a stage can appear
+	// in both engine lists when repeat stages are allowed).
+	inline void NormalizeStages(std::vector<StageRow>& a_stages)
+	{
+		std::stable_sort(a_stages.begin(), a_stages.end(),
+			[](const StageRow& a, const StageRow& b) { return a.index < b.index; });
+
+		std::vector<StageRow> merged;
+		merged.reserve(a_stages.size());
+		for (const auto& stage : a_stages) {
+			if (!merged.empty() && merged.back().index == stage.index) {
+				merged.back().executed |= stage.executed;
+				merged.back().startUp |= stage.startUp;
+				merged.back().shutDown |= stage.shutDown;
+			} else {
+				merged.push_back(stage);
+			}
+		}
+		a_stages = std::move(merged);
+	}
+
+	// "200  (current) [finish]" — label for the stage picker.
+	inline std::string FormatStageLabel(const StageRow& a_stage, std::uint16_t a_currentStage)
+	{
+		std::string label = std::to_string(a_stage.index);
+		if (a_stage.index == a_currentStage) {
+			label += "  (current)";
+		} else if (a_stage.executed) {
+			label += "  (done)";
+		}
+		if (a_stage.startUp) {
+			label += " [start]";
+		}
+		if (a_stage.shutDown) {
+			label += " [finish]";
+		}
+		return label;
+	}
+
 	enum class StageVerdict
 	{
 		kAdvance,    // target > current: the normal case

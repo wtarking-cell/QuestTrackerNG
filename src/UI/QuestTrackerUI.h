@@ -25,6 +25,7 @@ namespace UI
 
 		// --- main-thread work, posted via the SKSE task interface ---------
 		void RequestRefresh();
+		void RequestStages(std::uint32_t a_formID);
 		void RequestSetStage(std::uint32_t a_formID, std::uint16_t a_stage, bool a_force);
 
 	private:
@@ -36,6 +37,7 @@ namespace UI
 
 		// Runs on the game's main thread.
 		static void DoRefresh();
+		static void DoFetchStages(std::uint32_t a_formID);
 		static void DoSetStage(std::uint32_t a_formID, std::uint16_t a_stage, bool a_force);
 
 		std::atomic<bool> visible_{ false };
@@ -44,6 +46,8 @@ namespace UI
 
 		mutable std::mutex                          lock_;
 		std::vector<QuestTracker::Logic::QuestRow>  rows_;
+		std::vector<QuestTracker::Logic::StageRow>  stages_;
+		std::uint32_t                               stagesFormID_ = 0;  // quest the stages_ snapshot belongs to
 		std::string                                 status_;
 
 		// Read by the main-thread refresh task as well as the UI.

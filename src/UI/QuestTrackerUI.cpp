@@ -119,6 +119,53 @@ namespace UI
 		}
 	}
 
+	void QuestTrackerUI::RequestStages(std::uint32_t a_formID)
+	{
+		if (const auto* tasks = SKSE::GetTaskInterface()) {
+			tasks->AddTask([a_formID]() { DoFetchStages(a_formID); });
+		}
+	}
+
+	// Runs on the game's main thread. The engine keeps a quest's stages in
+	// two lists: executedStages (already run) and waitingStages (not yet
+	// run); together they are every stage the quest defines.
+	void QuestTrackerUI::DoFetchStages(std::uint32_t a_formID)
+	{
+		auto& self = Get();
+
+		std::vector<StageRow> stages;
+		if (const auto* quest = RE::TESForm::LookupByID<RE::TESQuest>(a_formID)) {
+			const auto append = [&stages](const RE::TESQuestStage& a_stage, bool a_executed) {
+				StageRow row;
+				row.index = a_stage.data.index;
+				row.executed = a_executed;
+				row.startUp = a_stage.data.flags.any(RE::QUEST_STAGE_DATA::Flag::kStartUpStage);
+				row.shutDown = a_stage.data.flags.any(RE::QUEST_STAGE_DATA::Flag::kShutDownStage);
+				stages.push_back(row);
+			};
+
+			if (quest->executedStages) {
+				for (const auto& stage : *quest->executedStages) {
+					append(stage, true);
+				}
+			}
+			if (quest->waitingStages) {
+				for (const auto* stage : *quest->waitingStages) {
+					if (stage) {
+						append(*stage, false);
+					}
+				}
+			}
+			NormalizeStages(stages);
+		}
+
+		{
+			std::scoped_lock guard(self.lock_);
+			self.stages_ = std::move(stages);
+			self.stagesFormID_ = a_formID;
+		}
+	}
+
 	void QuestTrackerUI::RequestSetStage(std::uint32_t a_formID, std::uint16_t a_stage, bool a_force)
 	{
 		const auto* tasks = SKSE::GetTaskInterface();
@@ -181,6 +228,7 @@ namespace UI
 				FormatFormID(a_formID));
 			self.SetStatus("Stage " + std::to_string(a_stage) + " requested for " + FormatFormID(a_formID));
 			self.RequestRefresh();
+			self.RequestStages(a_formID);
 		} else {
 			self.SetStatus("VM rejected SetCurrentStageID call");
 			logger::error("DispatchMethodCall failed for {}", FormatFormID(a_formID));
@@ -263,7 +311,7 @@ namespace UI
 			ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders |
 			ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable;
 
-		const float footer = ImGui::GetFrameHeightWithSpacing() * 3.5f;
+		const float footer = ImGui::GetFrameHeightWithSpacing() * 4.0f + 132.0f;
 		if (ImGui::BeginTable("##quests", 5, flags, ImVec2(0.0f, -footer))) {
 			ImGui::TableSetupScrollFreeze(0, 1);
 			ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
@@ -287,7 +335,11 @@ namespace UI
 				if (ImGui::Selectable(
 						row.name.empty() ? "<unnamed>" : row.name.c_str(), selected,
 						ImGuiSelectableFlags_SpanAllColumns)) {
-					selectedFormID_ = row.formID;
+					if (selectedFormID_ != row.formID) {
+						selectedFormID_ = row.formID;
+						stageInput_[0] = '\0';
+						RequestStages(row.formID);
+					}
 				}
 
 				ImGui::TableSetColumnIndex(1);
@@ -339,6 +391,32 @@ namespace UI
 			selected->name.empty() ? "<unnamed>" : selected->name.c_str(),
 			FormatFormID(selected->formID).c_str(),
 			selected->stage);
+
+		// Stage picker: every stage the engine knows for this quest.
+		// Clicking one fills the input box below.
+		std::vector<StageRow> stages;
+		{
+			std::scoped_lock guard(lock_);
+			if (stagesFormID_ == selectedFormID_) {
+				stages = stages_;
+			}
+		}
+		if (stages.empty()) {
+			ImGui::TextDisabled("(no stage data loaded yet)");
+		} else {
+			const auto    picked = ParseStageID(stageInput_);
+			const ImVec2  size(260.0f, 126.0f);
+			if (ImGui::BeginListBox("##stagelist", size)) {
+				for (const auto& stage : stages) {
+					const bool isPicked = picked && *picked == stage.index;
+					if (ImGui::Selectable(FormatStageLabel(stage, selected->stage).c_str(), isPicked)) {
+						std::snprintf(stageInput_, sizeof(stageInput_), "%u",
+							static_cast<unsigned>(stage.index));
+					}
+				}
+				ImGui::EndListBox();
+			}
+		}
 
 		ImGui::SetNextItemWidth(80.0f);
 		ImGui::InputText("##stage", stageInput_, sizeof(stageInput_), ImGuiInputTextFlags_CharsDecimal);

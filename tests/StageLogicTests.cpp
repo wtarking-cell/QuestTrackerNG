@@ -120,6 +120,38 @@ static void TestSortRows()
 	CHECK(dupes[1].formID == 9);
 }
 
+static void TestNormalizeStages()
+{
+	std::vector<StageRow> stages;
+	stages.push_back({ 200, false, false, true });
+	stages.push_back({ 10, true, true, false });
+	stages.push_back({ 10, false, false, false });  // duplicate of executed 10 (repeat stages)
+	stages.push_back({ 50, false, false, false });
+
+	NormalizeStages(stages);
+
+	CHECK(stages.size() == 3);
+	CHECK(stages[0].index == 10);
+	CHECK(stages[0].executed);  // merged: executed wins
+	CHECK(stages[0].startUp);
+	CHECK(stages[1].index == 50);
+	CHECK(!stages[1].executed);
+	CHECK(stages[2].index == 200);
+	CHECK(stages[2].shutDown);
+
+	std::vector<StageRow> empty;
+	NormalizeStages(empty);
+	CHECK(empty.empty());
+}
+
+static void TestFormatStageLabel()
+{
+	CHECK(FormatStageLabel({ 10, true, true, false }, 20) == "10  (done) [start]");
+	CHECK(FormatStageLabel({ 20, true, false, false }, 20) == "20  (current)");
+	CHECK(FormatStageLabel({ 200, false, false, true }, 20) == "200 [finish]");
+	CHECK(FormatStageLabel({ 50, false, false, false }, 20) == "50");
+}
+
 int main()
 {
 	TestParseStageID();
@@ -127,6 +159,8 @@ int main()
 	TestFilter();
 	TestClassifyStageChange();
 	TestSortRows();
+	TestNormalizeStages();
+	TestFormatStageLabel();
 
 	std::printf("%d checks, %d failure(s)\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;
