@@ -6,12 +6,17 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  # Node 24 becomes the forced default on 2026-06-16; opt in now so
+  # community actions (ilammy/msvc-dev-cmd) run the same way before and after.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   logic-tests:
     name: Logic tests (Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Configure
         run: cmake -S tests -B build-tests -DCMAKE_BUILD_TYPE=Release
@@ -27,7 +32,7 @@ jobs:
     runs-on: windows-latest
     needs: logic-tests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Point at the runner's vcpkg
         shell: pwsh
@@ -40,7 +45,7 @@ jobs:
         run: git -C $env:VCPKG_INSTALLATION_ROOT fetch origin master
 
       - name: Cache vcpkg packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             vcpkg_installed
@@ -63,7 +68,7 @@ jobs:
         run: python scripts/package.py --dist build/dist --out QuestTrackerNG.zip
 
       - name: Upload mod package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: QuestTrackerNG
           path: |
