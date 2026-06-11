@@ -139,7 +139,9 @@ namespace UI
 
 		std::vector<StageRow>     stages;
 		std::vector<ObjectiveRow> objectives;
-		if (const auto* quest = RE::TESForm::LookupByID<RE::TESQuest>(a_formID)) {
+		// non-const: BSSimpleList's const_iterator doesn't instantiate for
+		// pointer element types (objectives is an inline member list)
+		if (auto* quest = RE::TESForm::LookupByID<RE::TESQuest>(a_formID)) {
 			const auto append = [&stages](const RE::TESQuestStage& a_stage, bool a_executed) {
 				StageRow row;
 				row.index = a_stage.data.index;
