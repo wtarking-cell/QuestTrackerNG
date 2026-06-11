@@ -152,6 +152,47 @@ static void TestFormatStageLabel()
 	CHECK(FormatStageLabel({ 50, false, false, false }, 20) == "50");
 }
 
+static void TestQuestTypeAndObjectiveLabels()
+{
+	CHECK(QuestTypeLabel(0) == "None");
+	CHECK(QuestTypeLabel(1) == "Main Quest");
+	CHECK(QuestTypeLabel(6) == "Miscellaneous");
+	CHECK(QuestTypeLabel(11) == "Dragonborn");
+	CHECK(QuestTypeLabel(200) == "Unknown");
+
+	CHECK(ObjectiveStateLabel(0) == "dormant");
+	CHECK(ObjectiveStateLabel(1) == "displayed");
+	CHECK(ObjectiveStateLabel(2) == "completed");
+	CHECK(ObjectiveStateLabel(3) == "failed");
+	CHECK(ObjectiveStateLabel(99) == "?");
+}
+
+static void TestGrouping()
+{
+	std::vector<QuestRow> rows(3);
+	rows[0].typeId = 1;
+	rows[0].modName = "Skyrim.esm";
+	rows[1].typeId = 6;
+	rows[1].modName = "MyMod.esp";
+	rows[2].typeId = 1;
+	rows[2].modName = "";  // runtime-created
+
+	CHECK(GroupKeyFor(rows[0], GroupMode::kType) == "Main Quest");
+	CHECK(GroupKeyFor(rows[1], GroupMode::kMod) == "MyMod.esp");
+	CHECK(GroupKeyFor(rows[2], GroupMode::kMod) == "(runtime)");
+	CHECK(GroupKeyFor(rows[0], GroupMode::kNone).empty());
+
+	const auto byType = DistinctGroups(rows, GroupMode::kType);
+	CHECK(byType.size() == 2);  // Main Quest + Miscellaneous, deduped
+	const auto byMod = DistinctGroups(rows, GroupMode::kMod);
+	CHECK(byMod.size() == 3);
+	CHECK(byMod[0] == "(runtime)");  // sorted
+
+	// mod name participates in the text filter
+	CHECK(MatchesFilter(rows[1], "mymod"));
+	CHECK(!MatchesFilter(rows[0], "mymod"));
+}
+
 int main()
 {
 	TestParseStageID();
@@ -161,6 +202,8 @@ int main()
 	TestSortRows();
 	TestNormalizeStages();
 	TestFormatStageLabel();
+	TestQuestTypeAndObjectiveLabels();
+	TestGrouping();
 
 	std::printf("%d checks, %d failure(s)\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

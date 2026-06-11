@@ -20,12 +20,84 @@ namespace QuestTracker::Logic
 	{
 		std::string   name;
 		std::string   editorID;
+		std::string   modName;  // plugin file that defines the quest
 		std::uint32_t formID = 0;
 		std::uint16_t stage = 0;
+		std::uint8_t  typeId = 0;  // QUEST_DATA::Type
 		bool          running = false;
 		bool          active = false;
 		bool          completed = false;
 	};
+
+	// One quest objective (the HUD/journal text shown to the player).
+	struct ObjectiveRow
+	{
+		std::uint16_t index = 0;
+		std::string   text;
+		std::uint8_t  state = 0;  // QUEST_OBJECTIVE_STATE
+	};
+
+	// Journal category names for QUEST_DATA::Type.
+	inline std::string_view QuestTypeLabel(std::uint8_t a_type)
+	{
+		switch (a_type) {
+		case 0:  return "None";
+		case 1:  return "Main Quest";
+		case 2:  return "Mages Guild";
+		case 3:  return "Thieves Guild";
+		case 4:  return "Dark Brotherhood";
+		case 5:  return "Companions";
+		case 6:  return "Miscellaneous";
+		case 7:  return "Daedric";
+		case 8:  return "Side Quest";
+		case 9:  return "Civil War";
+		case 10: return "Dawnguard";
+		case 11: return "Dragonborn";
+		default: return "Unknown";
+		}
+	}
+
+	inline std::string_view ObjectiveStateLabel(std::uint8_t a_state)
+	{
+		switch (a_state) {
+		case 0:  return "dormant";
+		case 1:  return "displayed";
+		case 2:  return "completed";
+		case 3:  return "failed";
+		default: return "?";
+		}
+	}
+
+	enum class GroupMode : std::uint8_t
+	{
+		kNone = 0,
+		kType,
+		kMod
+	};
+
+	inline std::string GroupKeyFor(const QuestRow& a_row, GroupMode a_mode)
+	{
+		switch (a_mode) {
+		case GroupMode::kType:
+			return std::string(QuestTypeLabel(a_row.typeId));
+		case GroupMode::kMod:
+			return a_row.modName.empty() ? std::string("(runtime)") : a_row.modName;
+		default:
+			return {};
+		}
+	}
+
+	// Sorted, de-duplicated group headers for the given mode.
+	inline std::vector<std::string> DistinctGroups(const std::vector<QuestRow>& a_rows, GroupMode a_mode)
+	{
+		std::vector<std::string> groups;
+		for (const auto& row : a_rows) {
+			groups.push_back(GroupKeyFor(row, a_mode));
+		}
+		std::sort(groups.begin(), groups.end());
+		groups.erase(std::unique(groups.begin(), groups.end()), groups.end());
+		return groups;
+	}
 
 	// Parse a decimal quest stage entered by the user. Accepts surrounding
 	// whitespace; rejects empty input, non-digits, and values > 65535.
@@ -84,7 +156,7 @@ namespace QuestTracker::Logic
 		return it != a_haystack.end();
 	}
 
-	// Filter matches quest name, editor ID, or the formatted form ID.
+	// Filter matches quest name, editor ID, defining mod, or form ID.
 	inline bool MatchesFilter(const QuestRow& a_row, std::string_view a_filter)
 	{
 		if (a_filter.empty()) {
@@ -92,6 +164,7 @@ namespace QuestTracker::Logic
 		}
 		return ContainsCaseInsensitive(a_row.name, a_filter) ||
 		       ContainsCaseInsensitive(a_row.editorID, a_filter) ||
+		       ContainsCaseInsensitive(a_row.modName, a_filter) ||
 		       ContainsCaseInsensitive(FormatFormID(a_row.formID), a_filter);
 	}
 

@@ -104,8 +104,12 @@ namespace UI
 			if (const char* editorID = quest->GetFormEditorID()) {
 				row.editorID = editorID;
 			}
+			if (const auto* file = quest->GetFile(0)) {
+				row.modName = std::string(file->GetFilename());
+			}
 			row.formID = quest->GetFormID();
 			row.stage = quest->GetCurrentStageID();
+			row.typeId = static_cast<std::uint8_t>(quest->data.questType.get());
 			row.running = running;
 			row.active = quest->IsActive();
 			row.completed = quest->IsCompleted();
@@ -133,7 +137,8 @@ namespace UI
 	{
 		auto& self = Get();
 
-		std::vector<StageRow> stages;
+		std::vector<StageRow>     stages;
+		std::vector<ObjectiveRow> objectives;
 		if (const auto* quest = RE::TESForm::LookupByID<RE::TESQuest>(a_formID)) {
 			const auto append = [&stages](const RE::TESQuestStage& a_stage, bool a_executed) {
 				StageRow row;
@@ -157,11 +162,28 @@ namespace UI
 				}
 			}
 			NormalizeStages(stages);
+
+			// Objectives: the player-facing journal/HUD text for the quest.
+			for (const auto* objective : quest->objectives) {
+				if (!objective) {
+					continue;
+				}
+				ObjectiveRow row;
+				row.index = objective->index;
+				if (const char* text = objective->displayText.c_str()) {
+					row.text = text;
+				}
+				row.state = static_cast<std::uint8_t>(objective->state.get());
+				objectives.push_back(std::move(row));
+			}
+			std::stable_sort(objectives.begin(), objectives.end(),
+				[](const ObjectiveRow& a, const ObjectiveRow& b) { return a.index < b.index; });
 		}
 
 		{
 			std::scoped_lock guard(self.lock_);
 			self.stages_ = std::move(stages);
+			self.objectives_ = std::move(objectives);
 			self.stagesFormID_ = a_formID;
 		}
 	}
@@ -279,6 +301,9 @@ namespace UI
 		if (ImGui::Button("Refresh")) {
 			RequestRefresh();
 		}
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(110.0f);
+		ImGui::Combo("##group", &groupMode_, "No grouping\0By type\0By mod\0");
 
 		DrawQuestTable();
 		DrawStageEditor();
@@ -306,27 +331,56 @@ namespace UI
 		}
 
 		const std::string_view filter{ filter_ };
-
-		constexpr ImGuiTableFlags flags =
-			ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders |
-			ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable;
+		std::vector<QuestRow>  filtered;
+		filtered.reserve(rows.size());
+		for (auto& row : rows) {
+			if (MatchesFilter(row, filter)) {
+				filtered.push_back(std::move(row));
+			}
+		}
 
 		const float footer = ImGui::GetFrameHeightWithSpacing() * 4.0f + 132.0f;
-		if (ImGui::BeginTable("##quests", 5, flags, ImVec2(0.0f, -footer))) {
-			ImGui::TableSetupScrollFreeze(0, 1);
+		ImGui::BeginChild("##questarea", ImVec2(0.0f, -footer));
+
+		const auto mode = static_cast<GroupMode>(groupMode_);
+		if (mode == GroupMode::kNone) {
+			DrawTableRows(filtered, "all");
+		} else {
+			for (const auto& group : DistinctGroups(filtered, mode)) {
+				std::vector<QuestRow> subset;
+				for (const auto& row : filtered) {
+					if (GroupKeyFor(row, mode) == group) {
+						subset.push_back(row);
+					}
+				}
+				const std::string header =
+					group + "  (" + std::to_string(subset.size()) + ")###grp_" + group;
+				if (ImGui::CollapsingHeader(header.c_str())) {
+					DrawTableRows(subset, group.c_str());
+				}
+			}
+		}
+
+		ImGui::EndChild();
+		ImGui::Text("%d quest(s)", static_cast<int>(filtered.size()));
+	}
+
+	void QuestTrackerUI::DrawTableRows(const std::vector<QuestRow>& a_rows, const char* a_id)
+	{
+		constexpr ImGuiTableFlags flags =
+			ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable;
+
+		ImGui::PushID(a_id);
+		if (ImGui::BeginTable("##quests", 6, flags)) {
 			ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
 			ImGui::TableSetupColumn("Editor ID", ImGuiTableColumnFlags_WidthStretch);
+			ImGui::TableSetupColumn("Mod", ImGuiTableColumnFlags_WidthStretch, 0.6f);
 			ImGui::TableSetupColumn("Form ID", ImGuiTableColumnFlags_WidthFixed, 90.0f);
 			ImGui::TableSetupColumn("Stage", ImGuiTableColumnFlags_WidthFixed, 50.0f);
-			ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+			ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 70.0f);
 			ImGui::TableHeadersRow();
 
-			int shown = 0;
-			for (const auto& row : rows) {
-				if (!MatchesFilter(row, filter)) {
-					continue;
-				}
-				++shown;
+			for (const auto& row : a_rows) {
 				ImGui::TableNextRow();
 				ImGui::PushID(static_cast<int>(row.formID));
 
@@ -345,10 +399,12 @@ namespace UI
 				ImGui::TableSetColumnIndex(1);
 				ImGui::TextUnformatted(row.editorID.c_str());
 				ImGui::TableSetColumnIndex(2);
-				ImGui::TextUnformatted(FormatFormID(row.formID).c_str());
+				ImGui::TextUnformatted(row.modName.empty() ? "(runtime)" : row.modName.c_str());
 				ImGui::TableSetColumnIndex(3);
-				ImGui::Text("%u", row.stage);
+				ImGui::TextUnformatted(FormatFormID(row.formID).c_str());
 				ImGui::TableSetColumnIndex(4);
+				ImGui::Text("%u", row.stage);
+				ImGui::TableSetColumnIndex(5);
 				if (row.completed) {
 					ImGui::TextDisabled("done");
 				} else if (row.active) {
@@ -362,8 +418,8 @@ namespace UI
 				ImGui::PopID();
 			}
 			ImGui::EndTable();
-			ImGui::Text("%d quest(s)", shown);
 		}
+		ImGui::PopID();
 	}
 
 	void QuestTrackerUI::DrawStageEditor()
@@ -392,20 +448,22 @@ namespace UI
 			FormatFormID(selected->formID).c_str(),
 			selected->stage);
 
-		// Stage picker: every stage the engine knows for this quest.
-		// Clicking one fills the input box below.
-		std::vector<StageRow> stages;
+		// Stage picker (left) + objectives panel (right). Clicking a stage
+		// fills the input box below.
+		std::vector<StageRow>     stages;
+		std::vector<ObjectiveRow> objectives;
 		{
 			std::scoped_lock guard(lock_);
 			if (stagesFormID_ == selectedFormID_) {
 				stages = stages_;
+				objectives = objectives_;
 			}
 		}
 		if (stages.empty()) {
 			ImGui::TextDisabled("(no stage data loaded yet)");
 		} else {
-			const auto    picked = ParseStageID(stageInput_);
-			const ImVec2  size(260.0f, 126.0f);
+			const auto   picked = ParseStageID(stageInput_);
+			const ImVec2 size(220.0f, 126.0f);
 			if (ImGui::BeginListBox("##stagelist", size)) {
 				for (const auto& stage : stages) {
 					const bool isPicked = picked && *picked == stage.index;
@@ -416,6 +474,20 @@ namespace UI
 				}
 				ImGui::EndListBox();
 			}
+			ImGui::SameLine();
+			ImGui::BeginChild("##objectives", ImVec2(0.0f, 126.0f));
+			ImGui::TextDisabled("Objectives");
+			if (objectives.empty()) {
+				ImGui::TextDisabled("(this quest has no objectives)");
+			} else {
+				for (const auto& objective : objectives) {
+					ImGui::TextWrapped("[%u] %s - %s",
+						static_cast<unsigned>(objective.index),
+						std::string(ObjectiveStateLabel(objective.state)).c_str(),
+						objective.text.empty() ? "<no text>" : objective.text.c_str());
+				}
+			}
+			ImGui::EndChild();
 		}
 
 		ImGui::SetNextItemWidth(80.0f);

@@ -32,6 +32,7 @@ namespace UI
 		QuestTrackerUI() = default;
 
 		void DrawQuestTable();
+		void DrawTableRows(const std::vector<QuestTracker::Logic::QuestRow>& a_rows, const char* a_id);
 		void DrawStageEditor();
 		void SetStatus(std::string a_status);
 
@@ -46,8 +47,9 @@ namespace UI
 
 		mutable std::mutex                          lock_;
 		std::vector<QuestTracker::Logic::QuestRow>  rows_;
-		std::vector<QuestTracker::Logic::StageRow>  stages_;
-		std::uint32_t                               stagesFormID_ = 0;  // quest the stages_ snapshot belongs to
+		std::vector<QuestTracker::Logic::StageRow>     stages_;
+		std::vector<QuestTracker::Logic::ObjectiveRow> objectives_;
+		std::uint32_t                                  stagesFormID_ = 0;  // quest the stages_/objectives_ snapshot belongs to
 		std::string                                 status_;
 
 		// Read by the main-thread refresh task as well as the UI.
@@ -57,6 +59,7 @@ namespace UI
 		char                                  filter_[128] = {};
 		char                                  stageInput_[8] = {};
 		bool                                  force_ = false;
+		int                                   groupMode_ = 0;  // Logic::GroupMode
 		std::uint32_t                         selectedFormID_ = 0;
 		std::chrono::steady_clock::time_point lastRefresh_{};
 	};
