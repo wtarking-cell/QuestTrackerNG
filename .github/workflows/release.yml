@@ -40,12 +40,21 @@ jobs:
         shell: pwsh
         run: python scripts/package.py --dist build/dist --out "QuestTrackerNG-${{ github.ref_name }}.zip"
 
+      - name: Upload release zip as artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: QuestTrackerNG-${{ github.ref_name }}
+          path: QuestTrackerNG-${{ github.ref_name }}.zip
+          if-no-files-found: error
+
       - name: Create GitHub release
-        shell: pwsh
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release create "${{ github.ref_name }}"
-          "QuestTrackerNG-${{ github.ref_name }}.zip"
-          --title "QuestTrackerNG ${{ github.ref_name }}"
-          -
+        run: |
+          TAG="${{ github.ref_name }}"
+          ZIP="QuestTrackerNG-${TAG}.zip"
+          gh release create "$TAG" "$ZIP" \
+            --title "QuestTrackerNG ${TAG}" \
+            --generate-notes \
+          || gh release upload "$TAG" "$ZIP" --clobber
