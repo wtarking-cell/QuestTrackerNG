@@ -7,3 +7,4 @@ out/
 vcpkg_installed/
 *.user
 CMakeUserPresets.json
+skill-dev/

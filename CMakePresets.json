@@ -25,6 +25,14 @@
         "VCPKG_TARGET_TRIPLET": "x64-windows-static-md"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "ninja-release",
+      "displayName": "Ninja + MSVC (Release, shipping)",
+      "inherits": "ninja-ci",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
@@ -44,6 +52,11 @@
       "name": "ci",
       "displayName": "CI (Ninja RelWithDebInfo)",
       "configurePreset": "ninja-ci"
+    },
+    {
+      "name": "release-ninja",
+      "displayName": "Release (Ninja, shipping)",
+      "configurePreset": "ninja-release"
     }
   ]
 }

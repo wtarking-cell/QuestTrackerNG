@@ -15,7 +15,12 @@ endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+
+# Link-time optimization for every optimized config. Previously this only
+# covered Release, so the RelWithDebInfo binaries the CI/release pipeline
+# actually shipped were built without LTO.
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE        ON)
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON)
 
 # ---------------------------------------------------------------------------
 # CommonLibSSE-NG (pinned commit on main, fetched at configure time).
@@ -72,6 +77,19 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 	/W4
 	/external:W0
 	/external:anglebrackets
+	# Optimized builds: aggressive inlining (/Ob3), function-level linking
+	# (/Gy) and COMDAT folding (/Gw) so the linker can drop everything the
+	# plugin never calls. /Zi still emits a PDB for crash-log symbolication;
+	# package.py keeps the PDB out of the player archive.
+	$<$<CONFIG:Release,RelWithDebInfo>:/Ob3;/Gy;/Gw;/Zi>
+)
+
+# /OPT:REF drops unreferenced functions/data, /OPT:ICF folds identical ones.
+# RelWithDebInfo links with /DEBUG, which silently turns these OFF unless we
+# re-enable them explicitly -- that omission is what tripled the DLL size by
+# keeping all the unused CommonLibSSE-NG + ImGui code in the binary.
+target_link_options(${PROJECT_NAME} PRIVATE
+	$<$<CONFIG:Release,RelWithDebInfo>:/DEBUG:FULL;/OPT:REF;/OPT:ICF;/INCREMENTAL:NO>
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE src)
@@ -87,26 +105,4 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h)
 # ---------------------------------------------------------------------------
 # Package layout: build/dist/Data/SKSE/Plugins/{dll,ini} — zip this folder
 # (or point MO2/Vortex at it) to install the mod.
-# ---------------------------------------------------------------------------
-set(DIST_DIR "${CMAKE_BINARY_DIR}/dist/Data/SKSE/Plugins")
-
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-	COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_DIR}"
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different
-		"$<TARGET_FILE:${PROJECT_NAME}>" "${DIST_DIR}/"
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different
-		"$<TARGET_PDB_FILE:${PROJECT_NAME}>" "${DIST_DIR}/"
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different
-		"${CMAKE_SOURCE_DIR}/contrib/QuestTrackerNG.ini" "${DIST_DIR}/"
-	COMMENT "Staging mod package in ${CMAKE_BINARY_DIR}/dist"
-)
-
-# Optional: copy straight into a mod manager / game folder after each build.
-# Set the env var QUEST_TRACKER_OUTPUT_DIR to e.g. an MO2 mods directory.
-if(DEFINED ENV{QUEST_TRACKER_OUTPUT_DIR})
-	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E copy_directory
-			"${CMAKE_BINARY_DIR}/dist" "$ENV{QUEST_TRACKER_OUTPUT_DIR}"
-		COMMENT "Deploying to $ENV{QUEST_TRACKER_OUTPUT_DIR}"
-	)
-endif()
+# ----------------------------
