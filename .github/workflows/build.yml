@@ -19,7 +19,7 @@ jobs:
     name: Logic tests (Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Configure
         run: cmake -S tests -B build-tests -DCMAKE_BUILD_TYPE=Release
@@ -35,7 +35,7 @@ jobs:
     runs-on: windows-latest
     needs: logic-tests
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Point at the runner's vcpkg
         shell: pwsh
