@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   # Node 24 becomes the forced default on 2026-06-16; opt in now so
   # community actions (ilammy/msvc-dev-cmd) run the same way before and after.
